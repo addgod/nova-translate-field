@@ -111,6 +111,48 @@ class Translate extends Field
     }
 
     /**
+     * Get the validation rules for this field.
+     *
+     * @param  \Laravel\Nova\Http\Requests\NovaRequest $request
+     *
+     * @return array
+     */
+    public function getRules(NovaRequest $request)
+    {
+        return collect($this->fields)->flatten()->mapWithKeys(function ($field) use ($request) {
+            return $field->getRules($request);
+        })->toArray();
+    }
+
+    /**
+     * Get the creation rules for this field.
+     *
+     * @param  \Laravel\Nova\Http\Requests\NovaRequest $request
+     *
+     * @return array
+     */
+    public function getCreationRules(NovaRequest $request)
+    {
+        return collect($this->fields)->flatten()->mapWithKeys(function ($field) use ($request) {
+            return $field->getCreationRules($request);
+        })->toArray();
+    }
+
+    /**
+     * Get the update rules for this field.
+     *
+     * @param  \Laravel\Nova\Http\Requests\NovaRequest $request
+     *
+     * @return array
+     */
+    public function getUpdateRules(NovaRequest $request)
+    {
+        return collect($this->fields)->flatten()->mapWithKeys(function ($field) use ($request) {
+            return $field->getUpdateRules($request);
+        })->toArray();
+    }
+
+    /**
      * Get additional meta information to merge with the field payload.
      *
      * @return array

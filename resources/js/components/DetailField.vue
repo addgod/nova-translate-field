@@ -15,10 +15,6 @@
 export default {
     props: ['resource', 'resourceName', 'resourceId', 'field'],
 
-    mounted() {
-        console.log(this.fields)
-    },
-
     computed: {
         fields() {
             return this.field.fields[this.field.locale]
