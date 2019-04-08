@@ -11,7 +11,7 @@
                 :key="index"
                 :is="'form-' + field.component"
                 :errors="errors"
-                :resource-name="field.resourceName"
+                :resource-name="resourceName"
                 :field="field"
             />
         </div>
@@ -40,6 +40,7 @@ export default {
         fill(formData) {
             _.each(this.field.fields, fields => _.each(fields, field => field.fill(formData)))
         },
+
         setLocale(locale) {
             this.locale = locale;
         },
