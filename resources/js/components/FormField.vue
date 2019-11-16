@@ -10,7 +10,7 @@
                 v-for="(field, index) in fields"
                 :key="index"
                 :is="'form-' + field.component"
-                :errors="errors"
+                :errors="formattedErrors"
                 :resource-name="resourceName"
                 :field="field"
             />
@@ -29,14 +29,32 @@ export default {
     data() {
         return {
             locale: '',
+            locales: {}
         };
     },
 
     mounted() {
-        this.locale = this.field.locale
+        this.locale = this.field.locale;
+        this.resetLocalErrors();
+    },
+
+    watch: {
+        errors(errors) {
+            this.resetLocalErrors();
+            _.each(errors.errors, (error, key) => {
+                const [attribute, locale] = key.split('->');
+                this.locales[locale.substring(0,2)] = true;
+            });
+        }
     },
 
     methods: {
+        resetLocalErrors() {
+            this.locales = _.transform(this.field.locales, (result, value, key) => {
+                result[value] = false;
+            });
+        },
+
         fill(formData) {
             _.each(this.field.fields, fields => _.each(fields, field => field.fill(formData)))
         },
@@ -48,9 +66,25 @@ export default {
         tabClass(locale) {
             return {
                 'border-l border-t border-r rounded-t border-60 text-blue-dark font-semibold' : this.locale === locale,
-                'text-blue hover:text-blue-darker font-semibold' : this.locale !== locale
+                'text-blue hover:text-blue-darker font-semibold' : this.locale !== locale,
+                'text-danger' : this.locales[locale],
             }
         }
     },
+
+    computed: {
+        formattedErrors() {
+            if (Object.keys(this.errors.errors).length === 0) {
+                return this.errors;
+            }
+            const errors = _.clone(this.errors);
+            errors.errors = _.transform(this.errors.errors, (result, messages, key) => {
+                const [attribute, locale] = key.split('->');
+                result[key] = _.map(messages, message => message.replace(key, attribute));
+            });
+
+            return errors;
+        }
+    }
 }
 </script>

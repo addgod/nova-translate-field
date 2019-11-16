@@ -4,6 +4,7 @@ namespace Addgod\NovaTranslateField;
 
 use Laravel\Nova\Fields\Field;
 use Laravel\Nova\Http\Requests\NovaRequest;
+use stdClass;
 
 class Translate extends Field
 {
@@ -23,9 +24,6 @@ class Translate extends Field
 
     /** @var string[] */
     protected $locales = [];
-
-    /** @var \Laravel\Nova\Fields\Field[] */
-    protected $originalFields;
 
     /** @var \Laravel\Nova\Fields\Field[] */
     protected $fields;
@@ -52,33 +50,12 @@ class Translate extends Field
 
         $this->locales = static::$defaultLocales;
 
-        $this->originalFields = $fields;
-
         $this->fields = collect($this->locales)->mapWithKeys(function ($locale) use ($fields) {
             return [
                 $locale => collect($fields)->map(function ($field) use ($locale) {
                     $translatedField = clone $field;
 
-                    $originalAttribute = $translatedField->attribute;
-
-                    $translatedField->attribute = 'translations';
-
-                    $translatedField
-                        ->resolveUsing(function ($value, $model) use ($translatedField, $locale, $originalAttribute) {
-                            $translatedField->attribute = 'translations_' . $originalAttribute . '_' . $locale;
-                            $translatedField->panel = $this->panel;
-
-                            return $model->translations[$originalAttribute][$locale] ?? '';
-                        });
-
-                    $translatedField->fillUsing(function ($request, $model, $attribute, $requestAttribute) {
-                        $requestAttributeParts = explode('_', $requestAttribute);
-                        $locale = array_last($requestAttributeParts);
-                        array_shift($requestAttributeParts);
-                        array_pop($requestAttributeParts);
-                        $key = implode('_', $requestAttributeParts);
-                        $model->setTranslation($key, $locale, $request->get($requestAttribute));
-                    });
+                    $translatedField->attribute = $translatedField->attribute . '->' . $locale;
 
                     return $translatedField;
                 }),
@@ -86,24 +63,61 @@ class Translate extends Field
         });
     }
 
+    /**
+     * Determine if the field is required.
+     *
+     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
+     *
+     * @return bool
+     */
+    public function isRequired(NovaRequest $request)
+    {
+        return false;
+    }
+
+    /**
+     * Resolve the field's value.
+     *
+     * @param mixed       $resource
+     * @param string|null $attribute
+     *
+     * @return void
+     */
     public function resolve($resource, $attribute = null)
     {
-        return collect($this->fields)->map(function ($locale) use ($resource, $attribute) {
-            return $locale->map(function ($field) use ($resource, $attribute) {
-                return $field->resolve($resource, $attribute);
+        collect($this->fields)->map(function ($fields, $locale) use ($resource, $attribute) {
+            $fields->map(function ($field) use ($locale, $resource, $attribute) {
+                $field->resolve($resource->translations);
             });
         });
     }
 
+    /**
+     * Hydrate the given attribute on the model based on the incoming request.
+     *
+     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
+     * @param object                                  $model
+     *
+     * @return mixed
+     */
     public function fill(NovaRequest $request, $model)
     {
-        return collect($this->fields)->map(function ($locale) use ($request, $model) {
-            return $locale->map(function ($field) use ($request, $model) {
-                return $field->fill($request, $model);
+        collect($this->fields)->map(function ($locale) use ($request, $model) {
+            $locale->map(function ($field) use ($request, $model) {
+                list ($attribute, $locale) = explode('->', $field->attribute);
+                $object = new stdClass();
+                $field->fillInto($request, $object, $attribute, $field->attribute);
+                $model->setTranslation($attribute, $locale, $object->{$attribute});
             });
         });
     }
 
+    /**
+     * Set the locales.
+     *
+     * @param array  $locales
+     * @param string $default
+     */
     public static function locales(array $locales, string $default)
     {
         static::$defaultLocales = $locales;
@@ -113,7 +127,7 @@ class Translate extends Field
     /**
      * Get the validation rules for this field.
      *
-     * @param  \Laravel\Nova\Http\Requests\NovaRequest $request
+     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
      *
      * @return array
      */
@@ -127,7 +141,7 @@ class Translate extends Field
     /**
      * Get the creation rules for this field.
      *
-     * @param  \Laravel\Nova\Http\Requests\NovaRequest $request
+     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
      *
      * @return array
      */
@@ -141,7 +155,7 @@ class Translate extends Field
     /**
      * Get the update rules for this field.
      *
-     * @param  \Laravel\Nova\Http\Requests\NovaRequest $request
+     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
      *
      * @return array
      */
