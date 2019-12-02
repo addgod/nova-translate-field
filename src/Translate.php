@@ -2,31 +2,28 @@
 
 namespace Addgod\NovaTranslateField;
 
+use Eminiarts\Tabs\Tabs;
+use Exception;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Resources\MergeValue;
+use Illuminate\Support\Str;
 use Laravel\Nova\Fields\Field;
-use Laravel\Nova\Http\Requests\NovaRequest;
-use stdClass;
+use Laravel\Nova\Http\Controllers\ResourceIndexController;
+use Laravel\Nova\Http\Controllers\ResourceShowController;
+use Laravel\Nova\Metable;
 
-class Translate extends Field
+class Translate extends MergeValue
 {
-
-    /**
-     * The field's component.
-     *
-     * @var string
-     */
-    public $component = 'nova-translate-field';
+    use Metable;
 
     /** @var string[] */
-    public static $defaultLocales = [];
-
-    /** @var string */
-    public static $defaultLocale;
+    protected static $defaultLocales = [];
 
     /** @var string[] */
     protected $locales = [];
 
     /** @var \Laravel\Nova\Fields\Field[] */
-    protected $fields;
+    protected $originalFields;
 
     /**
      * The field's assigned panel.
@@ -34,6 +31,18 @@ class Translate extends Field
      * @var string
      */
     public $panel;
+
+    /**
+     * The panel's component.
+     *
+     * @var string
+     */
+    public $component = 'nova-translate-field';
+
+    public static function make(array $fields): self
+    {
+        return new static($fields);
+    }
 
     /**
      * Translate constructor.
@@ -45,138 +54,89 @@ class Translate extends Field
     public function __construct(array $fields = [])
     {
         if (!count(static::$defaultLocales)) {
-            throw new \Exception('Default locales not set.');
+            throw new Exception('No default locale set.');
         }
 
         $this->locales = static::$defaultLocales;
 
-        $this->fields = collect($this->locales)->mapWithKeys(function ($locale) use ($fields) {
-            return [
-                $locale => collect($fields)->map(function ($field) use ($locale) {
-                    $translatedField = clone $field;
+        $this->originalFields = $fields;
 
-                    $translatedField->attribute = $translatedField->attribute . '->' . $locale;
-
-                    return $translatedField;
-                }),
-            ];
-        });
+        $this->createTranslatableFields();
     }
 
-    /**
-     * Determine if the field is required.
-     *
-     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
-     *
-     * @return bool
-     */
-    public function isRequired(NovaRequest $request)
-    {
-        return false;
-    }
-
-    /**
-     * Resolve the field's value.
-     *
-     * @param mixed       $resource
-     * @param string|null $attribute
-     *
-     * @return void
-     */
-    public function resolve($resource, $attribute = null)
-    {
-        collect($this->fields)->map(function ($fields, $locale) use ($resource, $attribute) {
-            $fields->map(function ($field) use ($locale, $resource, $attribute) {
-                $field->resolve($resource->translations);
-            });
-        });
-    }
-
-    /**
-     * Hydrate the given attribute on the model based on the incoming request.
-     *
-     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
-     * @param object                                  $model
-     *
-     * @return mixed
-     */
-    public function fill(NovaRequest $request, $model)
-    {
-        collect($this->fields)->map(function ($locale) use ($request, $model) {
-            $locale->map(function ($field) use ($request, $model) {
-                list ($attribute, $locale) = explode('->', $field->attribute);
-                $object = new stdClass();
-                $field->fillInto($request, $object, $attribute, $field->attribute);
-                $model->setTranslation($attribute, $locale, $object->{$attribute});
-            });
-        });
-    }
-
-    /**
-     * Set the locales.
-     *
-     * @param array  $locales
-     * @param string $default
-     */
-    public static function locales(array $locales, string $default)
+    public static function defaultLocales(array $locales)
     {
         static::$defaultLocales = $locales;
-        static::$defaultLocale = $default;
     }
 
-    /**
-     * Get the validation rules for this field.
-     *
-     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
-     *
-     * @return array
-     */
-    public function getRules(NovaRequest $request)
+    public function locales(array $locales)
     {
-        return collect($this->fields)->flatten()->mapWithKeys(function ($field) use ($request) {
-            return $field->getRules($request);
-        })->toArray();
+        $this->locales = $locales;
+
+        $this->createTranslatableFields();
+
+        return $this;
     }
 
-    /**
-     * Get the creation rules for this field.
-     *
-     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
-     *
-     * @return array
-     */
-    public function getCreationRules(NovaRequest $request)
+    protected function createTranslatableFields()
     {
-        return collect($this->fields)->flatten()->mapWithKeys(function ($field) use ($request) {
-            return $field->getCreationRules($request);
-        })->toArray();
+        if ($this->onIndexOrDetailPage()) {
+            $this->data = $this->originalFields;
+
+            return;
+        }
+
+        $this->data = [];
+
+        $this->data[] = new Tabs('Languages', collect($this->locales)
+            ->mapWithKeys(function (string $locale) {
+                return [
+                    Str::upper($locale) => collect($this->originalFields)->map(function (Field $field) use ($locale) {
+                        return $this->createTranslatedField($field, $locale);
+                    }),
+                ];
+            })
+            ->toArray()
+        );
+
     }
 
-    /**
-     * Get the update rules for this field.
-     *
-     * @param \Laravel\Nova\Http\Requests\NovaRequest $request
-     *
-     * @return array
-     */
-    public function getUpdateRules(NovaRequest $request)
+    protected function createTranslatedField(Field $originalField, string $locale): Field
     {
-        return collect($this->fields)->flatten()->mapWithKeys(function ($field) use ($request) {
-            return $field->getUpdateRules($request);
-        })->toArray();
+        $translatedField = clone $originalField;
+
+        $originalAttribute = $translatedField->attribute;
+
+        $translatedField->attribute = 'translations';
+
+        $translatedField
+            ->resolveUsing(function ($value, Model $model) use ($translatedField, $locale, $originalAttribute) {
+                $translatedField->attribute = $originalAttribute . '->' . $locale;
+                $translatedField->panel = $this->panel;
+
+                return $model->translations[$originalAttribute][$locale] ?? '';
+            });
+
+        $translatedField->fillUsing(function (
+            $request,
+            $model,
+            $attribute,
+            $requestAttribute
+        ) use ($locale, $originalAttribute) {
+            $model->setTranslation($originalAttribute, $locale, $request->get($requestAttribute));
+        });
+
+        return $translatedField;
     }
 
-    /**
-     * Get additional meta information to merge with the field payload.
-     *
-     * @return array
-     */
-    public function meta()
+    protected function onIndexOrDetailPage(): bool
     {
-        return array_merge([
-            'fields'  => $this->fields,
-            'locales' => $this->locales,
-            'locale'  => static::$defaultLocale,
-        ], $this->meta);
+        if (!request()->route()) {
+            return false;
+        }
+        $currentController = Str::before(request()->route()->getAction()['controller'], '@');
+
+        return $currentController === ResourceIndexController::class ||
+            $currentController === ResourceShowController::class;
     }
 }

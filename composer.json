@@ -8,18 +8,12 @@
     "license": "MIT",
     "require": {
         "php": ">=7.1.0",
-        "spatie/laravel-translatable": "^4.0"
+        "spatie/laravel-translatable": "^4.0",
+        "eminiarts/nova-tabs": "^1.2"
     },
     "autoload": {
         "psr-4": {
             "Addgod\\NovaTranslateField\\": "src/"
-        }
-    },
-    "extra": {
-        "laravel": {
-            "providers": [
-                "Addgod\\NovaTranslateField\\FieldServiceProvider"
-            ]
         }
     },
     "config": {
